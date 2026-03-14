@@ -610,13 +610,28 @@ const INTRO_KEY    = 'ghostos_intro_seen';
 const AI_QUERY_LIMIT = 10;   // Alpha cap: max AI agent calls per session
 
 // =============================================================================
-// API KEYS — loaded from environment variables only, never prompted.
-// GROQ_API_KEY and OPENROUTER_API_KEY must be set in window.ENV before load.
+// API KEYS — loaded from window.ENV (local server.js) or fetched from
+// /api/index (Vercel serverless function). Supports both deployment modes.
 // =============================================================================
-const API_KEYS = {
+let API_KEYS = {
   groq:       window.ENV?.GROQ_API_KEY       || '',
   openrouter: window.ENV?.OPENROUTER_API_KEY || ''
 };
+
+// On Vercel, window.ENV won't exist — fetch keys from serverless endpoint
+async function loadEnvKeys() {
+  if (API_KEYS.groq && API_KEYS.openrouter) return; // already set by server.js
+  try {
+    const res = await fetch('/api/index');
+    if (res.ok) {
+      const env = await res.json();
+      if (env.GROQ_API_KEY)       API_KEYS.groq       = env.GROQ_API_KEY;
+      if (env.OPENROUTER_API_KEY) API_KEYS.openrouter  = env.OPENROUTER_API_KEY;
+    }
+  } catch (e) {
+    console.warn('Could not fetch env keys from /api/index:', e.message);
+  }
+}
 
 // Warn at boot if keys are missing — caught in bootStep()
 function checkKeysAvailable() {
@@ -1490,6 +1505,9 @@ async function bootStep() {
   DOM.modalOverlay.addEventListener('click', e => {
     if (e.target === DOM.modalOverlay) closeModal();
   });
+
+  // If running on Vercel (no window.ENV), fetch keys from serverless endpoint
+  await loadEnvKeys();
 
   // Warn early if env keys are missing
   const missingKeys = checkKeysAvailable();
