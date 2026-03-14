@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GHOST/OS — Neural Agent Terminal (v5.0 Alpha)</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    :root {
+      --green: #b8ffa0;
+      --green-hi: #44ff88;
+      --amber: #ffe066;
+      --cyan: #44ffaa;
+      --red: #ff5555;
+      --blue: #66aaff;
+      --orange: #ff9f43;
+      --purple: #bd93f9;
+      --dim: #2a4a2a;
+      --border: #162016;
+      --bg: #050505;
+      --bg-title: #0b150b;
+      --bg-status: #0a130a;
+      --mono: 'Courier New', Courier, monospace;
+      --text-primary: #e0f7e0;
+      --text-secondary: #c8e6c9;
+      --text-amber: #fff59d;
+      --text-dim: #81c784;
+    }
+    body {
+      background: #080808;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      cursor: text;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+      background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,
+          rgba(0, 0, 0, 0.07) 2px, rgba(0, 0, 0, 0.07) 4px);
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 49;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.75) 100%);
+    }
+    /* ── Terminal Window ─────────────────────────────────────── */
+    #window {
+      width: min(960px, 96vw);
+      height: min(640px, 92vh);
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      z-index: 31;
+      box-shadow:
+        0 0 60px rgba(0, 180, 70, 0.12),
+        0 0 3px rgba(0, 220, 80, 0.3),
+        inset 0 0 40px rgba(0, 0, 0, 0.9);
+    }
+    /* ── Title Bar ───────────────────────────────────────────── */
+    #titlebar {
+      background: var(--bg-title);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-r { background: #ff5f56; }
+    .dot-y { background: #ffbd2e; }
+    .dot-g { background: #27c93f; }
+    #title-text {
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: bold;
+      flex: 1;
+      text-shadow: 0 0 6px rgba(224, 247, 224, 0.6);
+    }
+    #info-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 2px 6px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 10px;
+      transition: all 0.2s;
+    }
+    #info-btn:hover {
+      background: var(--green-hi);
+      color: var(--bg);
+      box-shadow: 0 0 8px rgba(224, 247, 224, 0.6);
+    }
+    #agent-status {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--green-hi);
+      border-radius: 50%;
+      box-shadow: 0 0 6px rgba(224, 247, 224, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    /* ── HAL Badge ───────────────────────────────────────────── */
+    #hal-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      background: rgba(5, 5, 5, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-size: 8px;
+      z-index: 32;
+      cursor: default;
+    }
+    #hal-dot { width: 4px; height: 4px; border-radius: 50%; background: #ffaa00; }
+    #hal-text { color: #ffaa00; font-weight: bold; }
+    #hal-reason {
+      color: var(--text-secondary);
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* ── Content Area ─────────────────────────────────────────── */
+    #content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 8px;
+      /* FIX: #content is the scrollable container, not os-area */
+      overflow-y: auto;
+      overflow-x: hidden;
+      cursor: text;
+    }
+    /* os-area should NOT scroll — let #content handle it */
+    #os-area {
+      flex: 1;
+    }
+    /* ── Lines ─────────────────────────────────────────────────── */
+    .line {
+      line-height: 1.3;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-bottom: 3px;
+      text-shadow: 0 0 4px rgba(224, 247, 224, 0.4);
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+    /* FIX: ASCII art gets clamped font-size so it never overflows on mobile */
+    .line.ascii {
+      color: var(--text-primary);
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-shadow: 0 0 4px rgba(224, 247, 224, 0.6);
+      font-size: clamp(6px, 1.4vw, 12px);
+      line-height: 1.2;
+    }
+    .line.prompt {
+      color: var(--text-amber);
+      font-weight: bold;
+      text-shadow: 0 0 4px rgba(255, 245, 157, 0.6);
+    }
+    .line.thinking { color: var(--text-secondary); font-style: italic; }
+    .line.tool { color: var(--blue); text-shadow: 0 0 4px rgba(102, 170, 255, 0.5); }
+    .line.success { color: var(--green-hi); text-shadow: 0 0 4px rgba(68, 255, 136, 0.6); }
+    .line.error { color: var(--red); text-shadow: 0 0 4px rgba(255, 85, 85, 0.6); }
+    .line.done { color: var(--cyan); text-shadow: 0 0 4px rgba(68, 255, 170, 0.5); }
+    .line.boot { color: var(--text-secondary); }
+    .line.title { color: var(--text-primary); font-weight: bold; text-shadow: 0 0 6px rgba(224, 247, 224, 0.7); }
+    /* ── Input Row ─────────────────────────────────────────────── */
+    #input-row {
+      display: flex;
+      align-items: center;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    #prompt-label {
+      color: var(--text-amber);
+      font-weight: bold;
+      margin-right: 4px;
+      text-shadow: 0 0 4px rgba(255, 245, 157, 0.6);
+      white-space: nowrap;
+    }
+    #cmd-input {
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 12px;
+      flex: 1;
+      outline: none;
+      caret-color: var(--text-primary);
+      text-shadow: 0 0 2px rgba(224, 247, 224, 0.4);
+    }
+    #cursor {
+      width: 6px;
+      height: 12px;
+      background: var(--text-primary);
+      margin-left: 2px;
+      animation: blink 1s infinite;
+      box-shadow: 0 0 4px rgba(224, 247, 224, 0.6);
+      flex-shrink: 0;
+    }
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0.7; }
+    }
+    /* ── Spinner — FIX: inline flow, not absolute overlay ─────── */
+    #spinner {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: var(--blue);
+      font-size: 11px;
+      text-shadow: 0 0 4px rgba(102, 170, 255, 0.5);
+      padding: 4px 0;
+      flex-shrink: 0;
+    }
+    #spinner-frame { font-weight: bold; }
+    /* ── Status Bar ─────────────────────────────────────────────── */
+    #statusbar {
+      background: var(--bg-status);
+      border-top: 1px solid var(--border);
+      padding: 6px 12px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      user-select: none;
+      text-shadow: 0 0 2px rgba(129, 199, 132, 0.4);
+      flex-shrink: 0;
+    }
+    #status-right.running { color: var(--blue); text-shadow: 0 0 4px rgba(102, 170, 255, 0.6); }
+    /* ── Modal ─────────────────────────────────────────────────── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #modal {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      width: min(680px, 92vw);
+      max-height: 85vh;
+      font-size: 13.5px;
+      line-height: 1.45;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(0, 220, 80, 0.2);
+    }
+    #modal-header {
+      background: var(--bg-title);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-icon { font-size: 20px; }
+    #modal-title { color: var(--text-primary); font-weight: bold; font-size: 14px; text-shadow: 0 0 4px rgba(224, 247, 224, 0.5); }
+    #modal-subtitle { color: var(--text-secondary); font-size: 11px; margin-top: 2px; }
+    #modal-close { margin-left: auto; background: none; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 4px; }
+    #modal-close:hover { color: var(--red); }
+    #modal-content {
+      padding: 24px;
+      max-height: 70vh;
+      overflow-y: auto;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 15px;
+      color: var(--text-primary);
+      text-shadow: 0 0 3px rgba(224, 247, 224, 0.4);
+      line-height: 1.6;
+    }
+    .tab-nav { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .tab-btn { background: none; border: none; color: var(--text-secondary); padding: 10px 18px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; transition: all 0.2s ease; }
+    .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .panel-title { color: var(--text-primary); font-weight: bold; margin-bottom: 12px; font-size: 16px; text-shadow: 0 0 6px rgba(224, 247, 224, 0.6); letter-spacing: 0.5px; }
+    .panel-body { color: var(--text-secondary); font-size: 15px; line-height: 1.7; margin-bottom: 16px; text-align: left; }
+    .panel-divider { height: 1px; background: var(--border); margin: 12px 0; }
+    .modal-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .modal-nav button { background: var(--bg-title); border: 1px solid var(--border); color: var(--text-primary); padding: 6px 12px; cursor: pointer; font-size: 11px; border-radius: 2px; }
+    .modal-nav button:hover { background: var(--green-hi); color: var(--bg); }
+    #btn-prev { visibility: hidden; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--text-secondary); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-primary); }
+
+    /* ── Alpha limit: prompt counter pill in status bar ─────── */
+    #prompt-counter {
+      margin-right: auto;
+      font-size: 10px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #prompt-counter .pips {
+      display: flex;
+      gap: 3px;
+    }
+    .pip {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 1px solid var(--text-secondary);
+      background: transparent;
+      transition: background 0.3s;
+    }
+    .pip.used {
+      background: var(--green-hi);
+      border-color: var(--green-hi);
+      box-shadow: 0 0 4px rgba(68,255,136,0.5);
+    }
+    .pip.warn {
+      background: var(--amber);
+      border-color: var(--amber);
+      box-shadow: 0 0 4px rgba(255,224,102,0.6);
+    }
+    .pip.last {
+      background: var(--red);
+      border-color: var(--red);
+      box-shadow: 0 0 4px rgba(255,85,85,0.6);
+    }
+
+    /* ── Coming Soon full-terminal overlay ──────────────────── */
+    #coming-soon {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: var(--bg);
+      z-index: 40;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      text-align: center;
+      padding: 32px;
+    }
+    #coming-soon.active { display: flex; }
+    .cs-ascii {
+      color: var(--cyan);
+      font-size: clamp(6px, 1.2vw, 11px);
+      line-height: 1.15;
+      letter-spacing: 1px;
+      text-shadow: 0 0 10px rgba(68,255,170,0.5);
+      margin-bottom: 28px;
+      font-weight: bold;
+    }
+    .cs-title {
+      color: var(--green-hi);
+      font-size: clamp(13px, 2vw, 18px);
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(68,255,136,0.6);
+      margin-bottom: 10px;
+      letter-spacing: 2px;
+    }
+    .cs-sub {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.8;
+      margin-bottom: 28px;
+      max-width: 500px;
+    }
+    .cs-badge {
+      display: inline-block;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      padding: 4px 14px;
+      font-size: 10px;
+      border-radius: 2px;
+      letter-spacing: 3px;
+      text-shadow: 0 0 6px rgba(68,255,170,0.5);
+      box-shadow: 0 0 12px rgba(68,255,170,0.15);
+      margin-bottom: 32px;
+    }
+    .cs-features {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .cs-feat {
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      border-radius: 2px;
+      min-width: 140px;
+      text-align: left;
+      line-height: 1.6;
+    }
+    .cs-feat span {
+      color: var(--amber);
+      display: block;
+      font-size: 10px;
+      margin-bottom: 4px;
+      letter-spacing: 1px;
+    }
+    .cs-blink {
+      color: var(--text-dim);
+      font-size: 11px;
+      animation: pulse 2s infinite;
+    }
+  </style>
+</head>
+<body>
+  <div id="window">
+    <div id="titlebar">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span id="title-text">GHOST/OS — Neural Agent Terminal v5.3 · Alpha Edition</span>
+      <button id="info-btn" onclick="openModal()" title="About GHOST/OS">ⓘ</button>
+      <div id="agent-status">
+        <div class="status-dot"></div>
+        <span id="agent-label">AGENT ONLINE</span>
+      </div>
+    </div>
+    <div id="hal-badge">
+      <div id="hal-dot"></div>
+      <span id="hal-text"></span>
+      <span id="hal-reason"></span>
+    </div>
+    <div id="content" onclick="focusInput()">
+      <div id="boot-area"></div>
+      <div id="os-area" style="display:none"></div>
+      <!-- FIX: Spinner is now inline flow between output and input, not absolute overlay -->
+      <div id="spinner">
+        <span id="spinner-frame">⠋</span>
+        <span id="spinner-label">Agent working…</span>
+      </div>
+      <div id="input-row" style="display:none">
+        <span id="prompt-label">ghost@os:~$&nbsp;</span>
+        <input id="cmd-input" type="text" autocomplete="off" spellcheck="false" onkeydown="handleKey(event)" />
+        <div id="cursor"></div>
+      </div>
+    </div>
+    <div id="statusbar">
+      <div id="prompt-counter">
+        <span id="prompt-count-label">ALPHA · 0/10 prompts</span>
+        <div class="pips" id="pips-row"></div>
+      </div>
+      <span id="status-right">● IDLE | 0 queries • 0 tokens</span>
+    </div>
+
+    <!-- Coming Soon overlay — shown when prompt limit is reached -->
+    <div id="coming-soon">
+      <div class="cs-ascii">
+ ██████╗ ██████╗ ███╗   ███╗██╗███╗   ██╗ ██████╗
+██╔════╝██╔═══██╗████╗ ████║██║████╗  ██║██╔════╝
+██║     ██║   ██║██╔████╔██║██║██╔██╗ ██║██║  ███╗
+██║     ██║   ██║██║╚██╔╝██║██║██║╚██╗██║██║   ██║
+╚██████╗╚██████╔╝██║ ╚═╝ ██║██║██║ ╚████║╚██████╔╝
+ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝
+      </div>
+      <div class="cs-title">SESSION LIMIT REACHED</div>
+      <div class="cs-badge">GHOST/OS · ALPHA BUILD · v4.9</div>
+      <div class="cs-sub">
+        You've used all <strong style="color:var(--green-hi)">10 prompts</strong> available in this alpha session.<br>
+        We're working hard to bring you more power, more intelligence, and more features.<br>
+        <strong style="color:var(--cyan)">The next version is coming soon.</strong>
+      </div>
+      <div class="cs-features">
+        <div class="cs-feat"><span>COMING SOON</span>Unlimited prompts<br>for all users</div>
+        <div class="cs-feat"><span>COMING SOON</span>Hard complexity<br>query support</div>
+        <div class="cs-feat"><span>COMING SOON</span>Multi-agent<br>task pipelines</div>
+        <div class="cs-feat"><span>COMING SOON</span>Web browsing<br>+ live data</div>
+        <div class="cs-feat"><span>COMING SOON</span>Persistent user<br>accounts &amp; history</div>
+      </div>
+      <div class="cs-blink">▌ Reload the page to start a new alpha session</div>
+    </div>
+  </div>
+
+  <!-- ── INFO MODAL ───────────────────────────────────────────────────────── -->
+  <div id="modal-overlay">
+    <div id="modal">
+      <div id="modal-header">
+        <div class="modal-icon">⚡</div>
+        <div>
+          <div id="modal-title">GHOST/OS — Neural Agent Terminal</div>
+          <div id="modal-subtitle">v5.3 Alpha · Groq ↔ OpenRouter round-robin · No key prompts · 10 prompts/session</div>
+        </div>
+        <button id="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div id="modal-content">
+        <div class="tab-nav">
+          <button class="tab-btn active" onclick="switchTab(0)">What</button>
+          <button class="tab-btn" onclick="switchTab(1)">Why Special</button>
+          <button class="tab-btn" onclick="switchTab(2)">Tools</button>
+          <button class="tab-btn" onclick="switchTab(3)">HAL</button>
+          <button class="tab-btn" onclick="switchTab(4)">Memory</button>
+          <button class="tab-btn" onclick="switchTab(5)">How-to</button>
+        </div>
+        <div class="tab-panel active">
+          <div class="panel-title">🌟 What is GHOST/OS?</div>
+          <p class="panel-body">GHOST/OS is an AI-native operating system that runs entirely in your browser — no installation, no backend required. It uses lightning-fast access to Llama 3 models with intelligent multi-key rotation.</p>
+          <p class="panel-body">Experience the authentic feel of a retro Unix terminal where every command is handled by a live AI agent that can search Wikipedia, manage notes, run JavaScript calculations, and reason through complex multi-step tasks.</p>
+          <p class="panel-body">This is a genuine agentic system built on the ReAct pattern, delivering 100% human-readable output with clean, natural responses.</p>
+        </div>
+        <div class="tab-panel">
+          <div class="panel-title">⚡ What Makes GHOST/OS Special</div>
+          <p class="panel-body"><strong style="color:#44ff88">🔄 Proactive Round-Robin:</strong> Alternates between Groq and OpenRouter on every call so token quotas are spread evenly — no single provider gets overloaded.</p>
+          <p class="panel-body"><strong style="color:#44ff88">🔒 Secure JS Sandbox:</strong> JavaScript runs inside a sandboxed iframe — no access to localStorage, fetch, or the DOM.</p>
+          <p class="panel-body"><strong style="color:#44ff88">🧠 HAL Toggle:</strong> Control hallucination checking with <code>hal on</code> / <code>hal off</code>. Saves tokens when not needed.</p>
+          <p class="panel-body"><strong style="color:#44ff88">💾 Persistent Memory System:</strong> Notes survive across browser sessions with size-safe storage.</p>
+          <p class="panel-body"><strong style="color:#44ff88">👁️ Enhanced Visual Contrast:</strong> Brighter text and stronger shadows for superior readability.</p>
+        </div>
+        <div class="tab-panel">
+          <div class="panel-title">🔧 Powerful Built-in Tools</div>
+          <p class="panel-body"><strong style="color:#44ff88">Search Wikipedia for facts, historical information, or general knowledge on any topic</strong></p>
+          <p class="panel-body"><strong style="color:#44ff88">Execute JavaScript in a secure sandboxed iframe for calculations and data processing</strong></p>
+          <p class="panel-body"><strong style="color:#44ff88">Complete note management system with persistent storage across sessions</strong></p>
+          <p class="panel-body"><strong style="color:#44ff88">Get current date, time, timezone information, and formatted timestamps</strong></p>
+          <div class="panel-divider"></div>
+          <p class="panel-body"><em>The AI agent automatically selects the perfect tool for your task — just type naturally!</em></p>
+        </div>
+        <div class="tab-panel">
+          <div class="panel-title">🧠 HAL Detection System</div>
+          <p class="panel-body">HAL (Hallucination Alert) analyzes responses for potential fabrications. Toggle it with <code>hal on</code> or <code>hal off</code> (default: on).</p>
+          <p class="panel-body"><strong>What HAL detects:</strong><br>• Made-up statistics or fabricated numbers<br>• Invented citations or non-existent URLs<br>• Fictional people, companies, or events</p>
+          <div class="panel-divider"></div>
+          <p class="panel-body"><strong style="color:#33ff77">✅ GROUNDED</strong> — Response appears factual and reliable</p>
+          <p class="panel-body"><strong style="color:#ff5555">⚠️ HALLUCINATION</strong> — Potential fabrication detected with confidence level</p>
+        </div>
+        <div class="tab-panel">
+          <div class="panel-title">💾 Memory & Storage System</div>
+          <p class="panel-body"><strong style="color:#44ff88">🖥️ sessionStorage</strong> — Temporary storage for terminal history, command history, and conversation context. Flushed on page close.</p>
+          <p class="panel-body"><strong style="color:#44ff88">💾 localStorage</strong> — Permanent storage for API keys, saved notes, and usage statistics. Size-guarded with user-facing errors.</p>
+          <p class="panel-body"><strong style="color:#44ff88">🔄 Conversation Context</strong> — Full chat history maintained and included in AI responses for context awareness.</p>
+        </div>
+        <div class="tab-panel">
+          <div class="panel-title">📖 Quick Start Guide</div>
+          <p class="panel-body"><strong style="color:#44ff88">🔍 Knowledge Search:</strong> "What is the population of Tokyo?" or "Tell me about quantum computing"</p>
+          <p class="panel-body"><strong style="color:#44ff88">🧮 Calculations:</strong> "Calculate compound interest on $10,000 at 7% for 10 years"</p>
+          <p class="panel-body"><strong style="color:#44ff88">📝 Note Management:</strong> "Save note goals = Learn Groq API and build AI tools" or "Read note shopping list"</p>
+          <p class="panel-body"><strong style="color:#44ff88">⚡ Built-in Commands:</strong> <code>help</code>, <code>stats</code>, <code>clear</code>, <code>date</code>, <code>sysinfo</code>, <code>notes</code>, <code>hal on/off</code>, <code>info</code></p>
+        </div>
+        <div class="modal-nav">
+          <button id="btn-prev" onclick="prevTab()">← PREV</button>
+          <button id="btn-next" onclick="nextTab()">NEXT →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+// =============================================================================
+// GHOST/OS v4.9 — All fixes applied
+// FIX LIST:
+//  #1  run_js uses sandboxed iframe instead of regex blocklist
+//  #2  scrollDown() targets #content (the actual scrollable element)
+//  #3  HAL is opt-in via `hal on/off` command (default on, saves tokens)
+//  #4  localStorage writes are try/catch guarded with user-facing errors
+//  #5  Spinner is inline flow beside input, not absolute center overlay
+//  #6  ASCII art uses clamp() font-size so it doesn't overflow on mobile
+//  #7  spinnerInterval is module-level, not window-polluting
+//  #8  beforeunload flushes session immediately (no debounce race)
+//  #9  Command history stashes in-progress edit before navigating away
+//  #10 BOOT_SEQ uses sequential async/await with fixed inter-step delay
+// =============================================================================
+
+const SESSION_KEY  = 'ghostos_session';
+const INTRO_KEY    = 'ghostos_intro_seen';
+const AI_QUERY_LIMIT = 10;   // Alpha cap: max AI agent calls per session
+
+// =============================================================================
+// API KEYS — loaded from environment variables only, never prompted.
+// GROQ_API_KEY and OPENROUTER_API_KEY must be set in window.ENV before load.
+// =============================================================================
+const API_KEYS = {
+  groq:       window.ENV?.GROQ_API_KEY       || '',
+  openrouter: window.ENV?.OPENROUTER_API_KEY || ''
+};
+
+// Warn at boot if keys are missing — caught in bootStep()
+function checkKeysAvailable() {
+  const missing = Object.entries(API_KEYS).filter(([, v]) => !v).map(([k]) => k);
+  return missing; // [] = all good, else list of missing provider names
+}
+
+// =============================================================================
+// PROVIDER ROTATION — proactive round-robin + reactive failover
+//
+// Strategy:
+//  • We alternate between Groq and OpenRouter on every call (round-robin)
+//    so token quotas are spread evenly across both providers.
+//  • If a provider returns 429/503 or times out, it is marked failed for
+//    PROVIDER_COOLDOWN_MS and the other provider takes over immediately.
+//  • With 10 prompt limit and easy/medium complexity, each session makes
+//    at most ~15 API calls (10 agent + complexity checks + HAL). That's
+//    ~7-8 per provider — well within free-tier limits when shared.
+// =============================================================================
+const PROVIDERS = {
+  groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',  model: 'llama-3.3-70b-versatile' },
+  openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',    model: 'meta-llama/llama-3.3-70b-instruct' }
+};
+const PROVIDER_ORDER    = ['groq', 'openrouter'];
+const PROVIDER_COOLDOWN_MS = 90_000; // lock out a failed provider for 90s
+
+// Per-provider state
+const providerHealth    = { groq: 0, openrouter: 0 }; // last-failure timestamp (0 = healthy)
+let   roundRobinIdx     = 0;  // increments on every successful call pick
+
+// Pick the next healthy provider in round-robin order
+function pickProvider() {
+  for (let i = 0; i < PROVIDER_ORDER.length; i++) {
+    const p = PROVIDER_ORDER[(roundRobinIdx + i) % PROVIDER_ORDER.length];
+    if (Date.now() - providerHealth[p] > PROVIDER_COOLDOWN_MS) return p;
+  }
+  // All in cooldown — pick least-recently-failed
+  return PROVIDER_ORDER.reduce((best, p) =>
+    providerHealth[p] < providerHealth[best] ? p : best, PROVIDER_ORDER[0]);
+}
+
+function markProviderFailed(p) {
+  providerHealth[p] = Date.now();
+  addLine(`🔄 ${p.toUpperCase()} rate-limited — switching provider...`, 'tool');
+}
+
+// =============================================================================
+// groqChat — uses round-robin provider pick, env keys only, no prompts
+// =============================================================================
+async function groqChat(messages, tools = null, attempt = 0, maxTokens = 1024) {
+  if (attempt >= PROVIDER_ORDER.length * 2) {
+    throw new Error('Both providers are rate-limited. Please wait a moment and try again.');
+  }
+
+  const p   = pickProvider();
+  const cfg = PROVIDERS[p];
+  const key = API_KEYS[p];
+
+  // Advance round-robin counter so next call picks the other provider
+  roundRobinIdx = (roundRobinIdx + 1) % PROVIDER_ORDER.length;
+
+  if (!key) {
+    // This provider has no env key configured — skip it
+    markProviderFailed(p);
+    return groqChat(messages, tools, attempt + 1, maxTokens);
+  }
+
+  // Skip immediately if still in cooldown (redundant safety check)
+  if (Date.now() - providerHealth[p] < PROVIDER_COOLDOWN_MS) {
+    return groqChat(messages, tools, attempt + 1, maxTokens);
+  }
+
+  const body = { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens };
+  if (tools && tools.length > 0) { 
+    body.tools = tools; 
+    body.tool_choice = 'auto';
+  }
+
+  const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
+  if (p === 'openrouter') {
+    headers['HTTP-Referer'] = window.location.href;
+    headers['X-Title']      = 'GHOST/OS v5.3';
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(cfg.url, {
+      method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`API Error (${p}):`, res.status, errorText);
+      if (res.status >= 429 || res.status === 503) {
+        markProviderFailed(p);
+        return groqChat(messages, tools, attempt + 1, maxTokens);
+      }
+      throw new Error(`API error ${res.status} — ${errorText}`);
+    }
+
+    const data = await res.json();
+    if (data.usage) totalTokens += data.usage.total_tokens || 0;
+    providerHealth[p] = 0; // clear failure mark on success
+    return data;
+
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') {
+      markProviderFailed(p);
+      return groqChat(messages, tools, attempt + 1, maxTokens);
+    }
+    throw e;
+  }
+}
+let cmdHistory  = [];
+let histIdx     = -1;
+let histStash   = '';
+let convHistory = [];
+let cmdCount    = 0;
+let busy        = false;
+let currentTab  = 0;
+let osLines     = [];
+let totalTokens = 0;
+let totalQueries= 0;
+let aiQueryCount= 0;         // counts only AI agent calls (not built-ins)
+let cooldownUntil = 0;
+let cooldownInterval = null;
+let cooldownDiv  = null;
+let spinnerInterval = null;  // FIX #7: module-level, not window.*
+let toolCache   = new Map();
+let saveTimeout = null;
+
+// =============================================================================
+// PERF: Cached DOM refs — getElementById is called on every addLine/scroll/spin.
+// Cache once at startup; never query the DOM in hot loops again.
+// =============================================================================
+const DOM = {};
+function cacheDOMRefs() {
+  DOM.content       = document.getElementById('content');
+  DOM.osArea        = document.getElementById('os-area');
+  DOM.bootArea      = document.getElementById('boot-area');
+  DOM.inputRow      = document.getElementById('input-row');
+  DOM.cmdInput      = document.getElementById('cmd-input');
+  DOM.spinner       = document.getElementById('spinner');
+  DOM.spinnerFrame  = document.getElementById('spinner-frame'); // Fix 2: cached for setInterval
+  DOM.statusRight   = document.getElementById('status-right');
+  DOM.pipsRow       = document.getElementById('pips-row');
+  DOM.promptLabel   = document.getElementById('prompt-count-label');
+  DOM.halBadge      = document.getElementById('hal-badge');
+  DOM.halDot        = document.getElementById('hal-dot');
+  DOM.halText       = document.getElementById('hal-text');
+  DOM.halReason     = document.getElementById('hal-reason');
+  DOM.agentLabel    = document.getElementById('agent-label');
+  DOM.modalOverlay  = document.getElementById('modal-overlay');
+  DOM.comingSoon    = document.getElementById('coming-soon');
+  DOM.btnPrev       = document.getElementById('btn-prev');
+  DOM.btnNext       = document.getElementById('btn-next');
+}
+const TOOL_SCHEMAS = [
+  { type:"function", function:{ name:"wikipedia_search", description:"Search Wikipedia for facts, history, or general knowledge.", parameters:{ type:"object", properties:{ query:{ type:"string", description:"Search term" } }, required:["query"] } } },
+  { type:"function", function:{ name:"run_js", description:"Run JavaScript for math, calculations, dates, etc. MUST be complete code and use return.", parameters:{ type:"object", properties:{ code:{ type:"string" } }, required:["code"] } } },
+  { type:"function", function:{ name:"save_note", description:"Save note permanently.", parameters:{ type:"object", properties:{ key:{ type:"string" }, content:{ type:"string" } }, required:["key","content"] } } },
+  { type:"function", function:{ name:"read_note", description:"Read saved note.", parameters:{ type:"object", properties:{ key:{ type:"string" } }, required:["key"] } } },
+  { type:"function", function:{ name:"list_notes", description:"List all note keys.", parameters:{ type:"object", properties:{}, required:[] } } },
+  { type:"function", function:{ name:"delete_note", description:"Delete note.", parameters:{ type:"object", properties:{ key:{ type:"string" } }, required:["key"] } } },
+  { type:"function", function:{ name:"get_datetime", description:"Get current date/time.", parameters:{ type:"object", properties:{}, required:[] } } }
+];
+
+const AGENT_SYSTEM = `You are GHOST, a helpful retro terminal agent.
+ALWAYS reply in clear, natural, friendly English sentences.
+Never show raw JSON, code snippets, or machine-style output unless the user specifically asks.
+Be helpful and polite. End with [DONE], [FOUND], [SAVED] or [ERROR].`;
+
+const HAL_SYSTEM = `You are a hallucination detector. Return ONLY valid JSON: {"hallucinated":true/false,"confidence":"low|medium|high","reason":"one short sentence or null"}`;
+
+// Alpha-phase complexity gate
+const COMPLEXITY_SYSTEM = `You are a query complexity classifier for an alpha-phase AI terminal.
+Classify the user query as exactly one of: easy, medium, hard.
+
+easy   — Simple factual questions, basic calculations, single-step lookups, note CRUD, date/time, greetings.
+         Examples: "what is the capital of France", "what is 15% of 200", "save note x = y", "current time"
+
+medium — Multi-step questions, comparisons, short explanations, mild analysis, multi-tool chains.
+         Examples: "compare Python vs JavaScript", "summarize the causes of WW2", "compound interest formula and example"
+
+hard   — Deep research synthesis, complex reasoning chains, code generation, real-time predictions,
+         multi-agent orchestration, creative long-form writing, advanced math proofs, legal/medical advice.
+         Examples: "write a full REST API in Node.js", "predict next quarter earnings", "write a short story"
+
+Return ONLY one lowercase word: easy, medium, or hard. No punctuation, no explanation.`;
+
+// =============================================================================
+// FIX #1: SECURE run_js SANDBOX via sandboxed iframe + postMessage
+// =============================================================================
+function runInSandbox(code) {
+  return new Promise((resolve) => {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.style.cssText = 'display:none;position:absolute;left:-9999px;';
+
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('message', handler);
+      document.body.removeChild(iframe);
+      resolve('⏰ Timeout: Code took too long.');
+    }, 5000);
+
+    function handler(e) {
+      if (e.source !== iframe.contentWindow) return;
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      document.body.removeChild(iframe);
+      resolve(e.data);
+    }
+
+    window.addEventListener('message', handler);
+    document.body.appendChild(iframe);
+
+    // Inject code into sandboxed iframe — no access to parent storage, DOM, or fetch
+    const safeCode = JSON.stringify(code);
+    iframe.srcdoc = `<script>
+      try {
+        var fn = new Function('return ' + ${safeCode} + ';');
+        var result = fn();
+        parent.postMessage(String(result !== undefined ? result : '(no return)'), '*');
+      } catch(e) {
+        parent.postMessage('Error: ' + e.message, '*');
+      }
+    <\/script>`;
+  });
+}
+
+// SPEED FIX: slim context — only send last N turns to keep payloads small.
+// Full history is kept in convHistory for session restore; only a window is sent.
+const CTX_WINDOW = 6; // last 6 turns (3 user + 3 assistant) sent per request
+function buildMessages(systemPrompt, userMsg) {
+  return [
+    { role: 'system', content: systemPrompt },
+    ...convHistory.slice(-CTX_WINDOW),
+    { role: 'user', content: userMsg }
+  ];
+}
+
+// =============================================================================
+// TOOL EXECUTION — FIX #1 applied for run_js, FIX #4 for localStorage
+// =============================================================================
+async function execTool(name, args) {
+  const cacheKey = `${name}:${JSON.stringify(args)}`;
+  if (toolCache.has(cacheKey) && Date.now() - toolCache.get(cacheKey).timestamp < 60000) {
+    return toolCache.get(cacheKey).result;
+  }
+
+  const cache = (result) => { toolCache.set(cacheKey, { result, timestamp: Date.now() }); return result; };
+
+  try {
+    switch (name) {
+      case 'wikipedia_search': {
+        // SPEED FIX: single API call using prop=extracts to get title + intro in one round trip
+        // instead of: search → get title → fetch summary (2 sequential fetches before)
+        const q = encodeURIComponent(args.query);
+        const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrlimit=1&prop=extracts&exintro&explaintext&exsentences=6&format=json&origin=*`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        const pages = data.query?.pages;
+        if (pages) {
+          const page = Object.values(pages)[0];
+          if (page?.extract) {
+            return cache(`${page.title}\n${page.extract}\n[Source: ${page.title} via Wikipedia]`);
+          }
+        }
+        return cache('No Wikipedia results found. Try a more specific query.');
+      }
+
+      case 'run_js': {
+        // FIX #1: delegate to secure iframe sandbox
+        const result = await runInSandbox(args.code);
+        return cache(result);
+      }
+
+      case 'save_note': {
+        // FIX #4: guard localStorage writes
+        try {
+          let index = JSON.parse(localStorage.getItem('note_index') || '[]');
+          if (!index.includes(args.key)) index.push(args.key);
+          localStorage.setItem('note_index', JSON.stringify(index));
+          localStorage.setItem(`note_${args.key}`, JSON.stringify({ content: args.content, saved: new Date().toISOString() }));
+          return cache(`Note "${args.key}" saved successfully.`);
+        } catch (storageErr) {
+          return cache(`❌ Storage error: ${storageErr.message}. Your browser storage may be full.`);
+        }
+      }
+
+      case 'read_note': {
+        const val = localStorage.getItem(`note_${args.key}`);
+        if (!val) return cache(`Note "${args.key}" not found.`);
+        const d = JSON.parse(val);
+        return cache(`[${args.key}] saved on ${d.saved}\n${d.content}`);
+      }
+
+      case 'list_notes': {
+        const idx = JSON.parse(localStorage.getItem('note_index') || '[]');
+        return cache(idx.length ? 'Saved notes:\n' + idx.map(k => '• ' + k).join('\n') : 'No notes saved yet.');
+      }
+
+      case 'delete_note': {
+        // FIX #4: guard localStorage writes
+        try {
+          let idx2 = JSON.parse(localStorage.getItem('note_index') || '[]');
+          idx2 = idx2.filter(k => k !== args.key);
+          localStorage.setItem('note_index', JSON.stringify(idx2));
+          localStorage.removeItem(`note_${args.key}`);
+          return cache(`Note "${args.key}" has been deleted.`);
+        } catch (storageErr) {
+          return cache(`❌ Storage error: ${storageErr.message}`);
+        }
+      }
+
+      case 'get_datetime': {
+        // BUG 4 FIX: never cache datetime — result changes every second
+        const n = new Date();
+        return `Today is ${n.toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'})} at ${n.toLocaleTimeString()}.`;
+      }
+
+      default:
+        return cache(`Unknown tool: ${name}`);
+    }
+  } catch (e) {
+    return cache(`Tool error: ${e.message}`);
+  }
+}
+
+
+
+// =============================================================================
+// ALPHA GATE: PROMPT COUNTER PIPS + COMING SOON SCREEN
+// =============================================================================
+function renderPips() {
+  if (!DOM.pipsRow) return;
+  if (DOM.pipsRow.children.length === 0) {
+    for (let i = 0; i < AI_QUERY_LIMIT; i++) {
+      const pip = document.createElement('div');
+      pip.className = 'pip';
+      DOM.pipsRow.appendChild(pip);
+    }
+  }
+  const remaining = AI_QUERY_LIMIT - aiQueryCount;
+  const stateClass = remaining <= 1 ? 'last' : remaining <= 3 ? 'warn' : 'used';
+  Array.from(DOM.pipsRow.children).forEach((pip, i) => {
+    pip.className = 'pip' + (i < aiQueryCount ? ' ' + stateClass : '');
+  });
+  if (DOM.promptLabel) DOM.promptLabel.textContent = `ALPHA · ${aiQueryCount}/${AI_QUERY_LIMIT} prompts`;
+}
+
+function showComingSoon() {
+  DOM.cmdInput.disabled        = true;
+  DOM.inputRow.style.display   = 'none';
+  DOM.spinner.style.display    = 'none';
+  DOM.comingSoon.classList.add('active');
+}
+
+// =============================================================================
+// AGENT LOOP
+// =============================================================================
+async function runAgent(userMsg) {
+  // SPEED FIX: buildMessages sends only CTX_WINDOW turns, not all 25 in convHistory
+  let messages    = buildMessages(AGENT_SYSTEM, userMsg);
+  let iterations  = 0;
+  let toolsUsed   = false;
+  let finalAnswer = '';
+
+  while (iterations < 6) {
+    iterations++;
+    // SPEED FIX: 1024 max_tokens — enough for a helpful answer, not 4096
+    const data      = await groqChat(messages, TOOL_SCHEMAS, 0, 1024);
+    const msg       = data.choices[0].message;
+    const content   = msg.content   || '';
+    const toolCalls = msg.tool_calls || [];
+
+    if (toolCalls.length === 0 && content) {
+      finalAnswer = content.trim();
+      addLines(finalAnswer, 'done');
+      convHistory.push({ role: 'assistant', content: finalAnswer });
+      convHistory = convHistory.slice(-25);
+      return { finalAnswer, toolsUsed };
+    }
+
+    if (toolCalls.length > 0) {
+      toolsUsed = true;
+      messages.push(msg);
+      // PERF #1: run all tool calls in parallel — independent tools like
+      // wikipedia_search + get_datetime no longer block each other sequentially
+      const toolDescFn = {
+        wikipedia_search: a => `Searching Wikipedia for "${a.query||''}"`,
+        run_js:           () => `Running JavaScript calculation`,
+        save_note:        a => `Saving note "${a.key}"`,
+        read_note:        a => `Reading note "${a.key}"`,
+        list_notes:       () => `Listing all saved notes`,
+        delete_note:      a => `Deleting note "${a.key}"`,
+        get_datetime:     () => `Fetching current date and time`
+      };
+      const toolJobs = toolCalls.map(tc => {
+        let args = {};
+        try { args = JSON.parse(tc.function.arguments); } catch {}
+        addLine(`🔧 ${(toolDescFn[tc.function.name]?.(args)) || 'Using tool: '+tc.function.name}`, 'tool');
+        return execTool(tc.function.name, args)
+          .then(result => ({ role:'tool', content: result, tool_call_id: tc.id }));
+      });
+      const toolResults = await Promise.all(toolJobs);
+      toolResults.forEach(r => messages.push(r));
+    }
+  }
+
+  finalAnswer = finalAnswer || '[Task complete]';
+  convHistory.push({ role: 'assistant', content: finalAnswer });
+  convHistory = convHistory.slice(-25);
+  return { finalAnswer, toolsUsed };
+}
+
+
+// =============================================================================
+// COOLDOWN + STATUS
+// =============================================================================
+function startCooldown(seconds) {
+  cooldownUntil = Date.now() + seconds * 1000;
+  DOM.cmdInput.disabled = true;
+  if (cooldownDiv) cooldownDiv.remove();
+  cooldownDiv = document.createElement('div');
+  cooldownDiv.className = 'line error';
+  DOM.osArea.appendChild(cooldownDiv);
+  let remaining = seconds;
+  const update = () => {
+    if (remaining <= 0) {
+      clearInterval(cooldownInterval);
+      cooldownDiv.textContent = '✅ Rate limit cooldown ended. You can type again!';
+      setTimeout(() => { if (cooldownDiv) cooldownDiv.remove(); cooldownDiv = null; }, 4000);
+      DOM.cmdInput.disabled = false;
+      focusInput();
+      cooldownUntil = 0;
+      updateStatus();
+      return;
+    }
+    cooldownDiv.textContent = `⏳ Rate limit reached... ${remaining} seconds left`;
+    updateStatus();
+    remaining--;
+  };
+  update();
+  cooldownInterval = setInterval(update, 1000);
+}
+
+// PERF #4: updateStatus dirty-checks before writing — skips the DOM write
+// when content is unchanged (called every second during cooldown).
+let lastStatusText = '';
+let lastStatusClass = '';
+function updateStatus() {
+  let text, cls;
+  if (Date.now() < cooldownUntil) {
+    const rem = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    text = `● COOLDOWN | ${rem}s left`;
+    cls  = 'running';
+  } else {
+    text = busy ? '● AGENT RUNNING' : `● IDLE | ${totalQueries} queries • ${totalTokens.toLocaleString()} tokens`;
+    cls  = busy ? 'running' : '';
+  }
+  if (text === lastStatusText && cls === lastStatusClass) return;
+  lastStatusText  = text;
+  lastStatusClass = cls;
+  DOM.statusRight.textContent = text;
+  DOM.statusRight.className   = cls;
+}
+
+// =============================================================================
+// COMMAND HANDLER
+// =============================================================================
+async function handleCmd(raw) {
+  const cmd = raw.trim();
+  if (!cmd) return;
+
+  // BUG 2 FIX: guard against concurrent calls — pressing Enter twice quickly
+  // would run two agents simultaneously, corrupting aiQueryCount and state.
+  if (busy) {
+    addLine('⚠️ Agent is still working — please wait.', 'error');
+    return;
+  }
+
+  if (Date.now() < cooldownUntil) {
+    const rem = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    addLine(`⏳ Cooldown still active — ${rem} seconds left`, 'error');
+    return;
+  }
+
+  addLine(`ghost@os:~$ ${cmd}`, 'prompt');
+  addLine('', '');
+  cmdHistory.unshift(cmd);
+  histIdx   = -1;
+  histStash = '';   // FIX #9: clear stash on new command
+  totalQueries++;
+  updateStatus();
+
+  // ── Built-in commands ──────────────────────────────────────────────────────
+  if (cmd === 'clear')  { clearTerminal(); return; }
+
+  // FIX #3: HAL toggle commands
+  if (cmd === 'hal on')  { halEnabled = true;  addLine('🧠 HAL hallucination detection: ON', 'done');  updateStatus(); return; }
+  if (cmd === 'hal off') { halEnabled = false; addLine('🧠 HAL hallucination detection: OFF', 'tool'); updateStatus(); return; }
+
+  if (cmd === 'help') {
+    addLines(`GHOST/OS — COMMAND REFERENCE (v5.0 Alpha)
+──────────────────────────────────────────────────
+BUILT-IN (instant, no AI, don't use prompt quota):
+  help         This reference guide
+  clear        Wipe all terminal output
+  date         Current date, time, epoch, timezone
+  sysinfo      OS version, model, alpha quota
+  notes        List all saved notes
+  stats        Session stats (tokens, queries, quota)
+  hal on/off   Toggle hallucination detection
+  info         Open the info/about modal
+AI AGENT (uses 1 of your 10 alpha prompts):
+  Just type naturally — easy & medium queries only.
+  Hard queries are blocked in this alpha build.
+EXAMPLES:
+  what is the speed of light?
+  calculate compound interest on 10000 at 7% for 10 years
+  save note shopping = milk, eggs, bread
+[DONE]`, 'done');
+    return;
+  }
+
+  if (cmd === 'date') {
+    const n  = new Date();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    addLines(`DATE & TIME INFO
+──────────────────────────────────
+Local Date : ${n.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+Local Time : ${n.toLocaleTimeString()}
+UTC        : ${n.toUTCString()}
+Epoch      : ${Math.floor(n.getTime() / 1000)}
+Timezone   : ${tz}
+ISO 8601   : ${n.toISOString()}
+[DONE]`, 'done');
+    return;
+  }
+
+  if (cmd === 'sysinfo') {
+    const providerStatus = PROVIDER_ORDER.map(p => {
+      const hasKey   = !!API_KEYS[p];
+      const healthy  = Date.now() - providerHealth[p] > PROVIDER_COOLDOWN_MS;
+      const state    = !hasKey ? '⚠️  no key' : healthy ? '✅ healthy' : '⏳ cooling down';
+      return ` ${p.padEnd(12)} ${state}`;
+    }).join('\n');
+    addLines(`GHOST/OS SYSTEM INFORMATION
+──────────────────────────────────────────────────
+OS Version   : GHOST/OS v5.3 Alpha
+Build Phase  : ALPHA — easy + medium queries only
+AI Prompts   : ${aiQueryCount} / ${AI_QUERY_LIMIT} used (${Math.max(0, AI_QUERY_LIMIT - aiQueryCount)} remaining)
+LLM Model    : llama-3.3-70b-versatile (round-robin)
+JS Sandbox   : Secure iframe (no storage/fetch access)
+Rotation     : Groq ↔ OpenRouter (proactive, env keys)
+PROVIDERS:
+${providerStatus}
+TOOLS AVAILABLE:
+  wikipedia_search  run_js      save_note
+  read_note         list_notes  delete_note  get_datetime
+[DONE]`, 'done');
+    return;
+  }
+
+  if (cmd === 'notes') {
+    const noteIndex = JSON.parse(localStorage.getItem('note_index') || '[]');
+    if (noteIndex.length === 0) {
+      addLine('No notes saved yet. Try: save note <name> = <content>', 'done');
+    } else {
+      noteIndex.forEach(key => {
+        const raw = localStorage.getItem(`note_${key}`);
+        if (raw) {
+          const note    = JSON.parse(raw);
+          const date    = new Date(note.saved).toLocaleDateString();
+          const preview = note.content.length > 60 ? note.content.slice(0, 60) + '…' : note.content;
+          addLine(` • ${key.padEnd(16)} [${date}] ${preview}`, 'done');
+        }
+      });
+      addLine('[DONE]', 'done');
+    }
+    return;
+  }
+
+  if (cmd === 'stats') {
+    const noteCount   = JSON.parse(localStorage.getItem('note_index') || '[]').length;
+    const nextProv    = pickProvider();
+    addLines(`SESSION STATISTICS
+──────────────────────────────────────────────────
+Queries This Session : ${totalQueries}
+AI Prompts Used      : ${aiQueryCount} / ${AI_QUERY_LIMIT} (alpha limit)
+AI Prompts Remaining : ${Math.max(0, AI_QUERY_LIMIT - aiQueryCount)}
+Tokens Used          : ${totalTokens.toLocaleString()}
+Commands in History  : ${cmdHistory.length}
+Conversation Turns   : ${convHistory.length}
+Notes Stored         : ${noteCount}
+Next Provider        : ${nextProv.toUpperCase()} (round-robin)
+Cooldown Active      : ${Date.now() < cooldownUntil ? 'YES' : 'No'}
+[DONE]`, 'done');
+    return;
+  }
+
+  if (cmd === 'info') { openModal(); return; }
+
+  // ── Alpha: prompt limit check ──────────────────────────────────────────────
+  if (aiQueryCount >= AI_QUERY_LIMIT) {
+    showComingSoon();
+    return;
+  }
+
+  busy = true;
+  startSpinner();
+
+  // ── AI Agent ───────────────────────────────────────────────────────────────
+  try {
+    aiQueryCount++;
+    renderPips();
+
+    const remaining = AI_QUERY_LIMIT - aiQueryCount;
+    if (remaining === 3) addLine(`⚠️  Alpha notice: ${remaining} AI prompts remaining this session.`, 'error');
+    if (remaining === 1) addLine(`⚠️  Alpha notice: This is your LAST prompt this session.`, 'error');
+    if (remaining === 0) addLine(`⚠️  Alpha notice: Session limit reached after this response.`, 'error');
+
+    const { finalAnswer, toolsUsed } = await runAgent(cmd);
+
+    if (aiQueryCount >= AI_QUERY_LIMIT) {
+      setTimeout(showComingSoon, 1800);
+    }
+  } catch (e) {
+    if (e.message.startsWith('RATE_LIMIT:')) {
+      const waitSec = parseInt(e.message.split(':')[1]) || 60;
+      startCooldown(waitSec);
+      busy = false;
+      stopSpinner();
+      return;
+    }
+    // BUG 3 FIX: roll back the prompt slot if the agent never produced a response.
+    // Only roll back if the agent threw before sending anything useful.
+    if (aiQueryCount > 0) {
+      aiQueryCount--;
+      renderPips();
+    }
+    addLine(`⚠️ ${e.message}`, 'error');
+    addLine('[ERROR]', 'error');
+  } finally {
+    busy = false;
+    stopSpinner();
+    updateStatus();
+    saveSession();
+  }
+}
+
+// =============================================================================
+// TERMINAL HELPERS
+// =============================================================================
+function addLine(text, className = '') {
+  const div       = document.createElement('div');
+  div.className   = 'line' + (className ? ' ' + className : '');
+  div.textContent = text;
+  DOM.osArea.appendChild(div);
+  osLines.push({ text, className });
+  pruneLines();
+  scrollDown();
+}
+
+function addLines(text, className = '') {
+  const fragment = document.createDocumentFragment();
+  text.split('\n').forEach(line => {
+    const div       = document.createElement('div');
+    div.className   = `line ${className}`;
+    div.textContent = line;
+    fragment.appendChild(div);
+    osLines.push({ text: line, className });
+  });
+  DOM.osArea.appendChild(fragment);
+  pruneLines();
+  scrollDown();
+}
+
+function pruneLines() {
+  if (osLines.length <= 300) return;
+  const excess = osLines.length - 300;
+  osLines.splice(0, excess);
+  // PERF #3: single replaceChildren call instead of N removeChild calls.
+  // removeChild in a loop forces the browser to re-query firstChild after each removal.
+  // replaceChildren swaps all children in one atomic DOM operation.
+  DOM.osArea.replaceChildren(...Array.from(DOM.osArea.children).slice(excess));
+}
+
+function clearTerminal() {
+  DOM.osArea.innerHTML = '';
+  osLines = [];
+  addLine('Terminal cleared. [DONE]', 'done');
+}
+
+// PERF #3: Debounced scroll — collapses N addLine() calls in one response into
+// a single rAF, instead of forcing a layout reflow on every single line added.
+let scrollPending = false;
+function scrollDown() {
+  if (scrollPending) return;
+  scrollPending = true;
+  requestAnimationFrame(() => {
+    scrollPending = false;
+    DOM.content.scrollTop = DOM.content.scrollHeight;
+  });
+}
+
+function focusInput() {
+  DOM.cmdInput.focus();
+}
+
+// FIX #5: inline spinner — no absolute overlay, no z-index fight
+function startSpinner() {
+  if (spinnerInterval) clearInterval(spinnerInterval);
+  DOM.spinner.style.display = 'flex';
+  let frame = 0;
+  const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  // PERF #2: DOM.spinnerFrame cached — no getElementById inside the 100ms hot loop
+  spinnerInterval = setInterval(() => {
+    DOM.spinnerFrame.textContent = frames[frame++ % frames.length];
+  }, 100);
+}
+
+function stopSpinner() {
+  if (spinnerInterval) { clearInterval(spinnerInterval); spinnerInterval = null; }
+  DOM.spinner.style.display = 'none';
+}
+
+// =============================================================================
+// FIX #9: KEYBOARD — stash in-progress edit before history navigation
+// =============================================================================
+function handleKey(e) {
+  const input = DOM.cmdInput;
+
+  if (e.key === 'Enter') {
+    const cmd   = input.value;
+    input.value = '';
+    histStash   = '';
+    handleCmd(cmd);
+
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (histIdx === -1) histStash = input.value;  // stash current edit
+    if (histIdx < cmdHistory.length - 1) {
+      histIdx++;
+      input.value = cmdHistory[histIdx];
+    }
+
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (histIdx > 0) {
+      histIdx--;
+      input.value = cmdHistory[histIdx];
+    } else if (histIdx === 0) {
+      histIdx     = -1;
+      input.value = histStash;  // restore stashed edit
+    }
+  }
+}
+
+// =============================================================================
+// SESSION PERSISTENCE — FIX #8: flush immediately on beforeunload
+// =============================================================================
+function saveSession() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(_flushSession, 1000);
+}
+
+function _flushSession() {
+  const session = {
+    osLines:      osLines.slice(-200),
+    cmdHistory:   cmdHistory.slice(0, 100),
+    convHistory:  convHistory.slice(-20),
+    totalTokens,
+    totalQueries
+  };
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+// FIX #8: guarantee flush before page close
+window.addEventListener('beforeunload', _flushSession);
+
+function loadSession() {
+  const saved = sessionStorage.getItem(SESSION_KEY);
+  if (!saved) { renderPips(); return; }
+  const session   = JSON.parse(saved);
+  osLines         = session.osLines      || [];
+  cmdHistory      = session.cmdHistory   || [];
+  convHistory     = session.convHistory  || [];
+  totalTokens     = session.totalTokens  || 0;
+  totalQueries    = session.totalQueries || 0;
+  const fragment  = document.createDocumentFragment();
+  osLines.forEach(({ text, className }) => {
+    const div       = document.createElement('div');
+    div.className   = `line ${className}`;
+    div.textContent = text;
+    fragment.appendChild(div);
+  });
+  DOM.osArea.appendChild(fragment);
+  renderPips();
+  // If already at limit from a previous restored session, show coming soon
+  if (aiQueryCount >= AI_QUERY_LIMIT) { showComingSoon(); }
+  updateStatus();
+}
+
+// =============================================================================
+// MODAL HELPERS
+// =============================================================================
+function openModal() {
+  DOM.modalOverlay.style.display = 'flex';
+  if (!localStorage.getItem(INTRO_KEY)) localStorage.setItem(INTRO_KEY, 'true');
+}
+function closeModal() {
+  DOM.modalOverlay.style.display = 'none';
+  focusInput();
+}
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b, i)   => b.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+  currentTab = idx;
+  DOM.btnPrev.style.visibility = idx > 0 ? 'visible' : 'hidden';
+  DOM.btnNext.textContent      = idx < 5 ? 'NEXT →' : 'LAUNCH OS ▶';
+}
+function prevTab() { if (currentTab > 0) switchTab(currentTab - 1); }
+function nextTab() {
+  if (currentTab < 5) { switchTab(currentTab + 1); return; }
+  if (!API_KEYS.groq && !API_KEYS.openrouter) { alert('No API keys found in window.ENV — set GROQ_API_KEY or OPENROUTER_API_KEY.'); return; }
+  closeModal();
+}
+// Wire-up happens inside bootStep() after cacheDOMRefs() — see below.
+
+// =============================================================================
+// FIX #10: BOOT SEQUENCE — sequential async/await with fixed inter-step delay
+// Consistent timing regardless of page load speed, no RAF stacking
+// =============================================================================
+const BOOT_SEQ = [
+  { t: 'BIOS v5.3 — Initializing GHOST neural hardware...', cls: 'title' },
+  { t: 'KEY  :: GROQ_API_KEY + OPENROUTER_API_KEY from env .. [OK]', cls: 'success' },
+  { t: 'ROT  :: Proactive round-robin Groq ↔ OpenRouter ..... [OK]', cls: 'success' },
+  { t: 'SEC  :: Sandboxed iframe for run_js ................. [OK]', cls: 'success' },
+  { t: 'ALPHA:: Complexity gate — easy + medium only ........ [OK]', cls: 'success' },
+  { t: 'ALPHA:: Session prompt limit: 10 queries ............ [OK]', cls: 'success' },
+  { t: 'SES  :: sessionStorage restore + beforeunload flush . [OK]', cls: 'success' },
+  { t: 'UI   :: DOM cache + rAF scroll + pip counter ........ [OK]', cls: 'success' },
+  { t: '', cls: '' },
+  { t: '██████╗ ██╗ ██╗ ██████╗ ███████╗████████╗', cls: 'ascii' },
+  { t: '██╔════╝ ██║ ██║██╔═══██╗██╔════╝╚══██╔══╝', cls: 'ascii' },
+  { t: '██║ ███╗███████║██║ ██║███████╗ ██║ ', cls: 'ascii' },
+  { t: '██║ ██║██╔══██║██║ ██║╚════██║ ██║ ', cls: 'ascii' },
+  { t: '╚██████╔╝██║ ██║╚██████╔╝███████║ ██║ ', cls: 'ascii' },
+  { t: ' ╚═════╝ ╚═╝ ╚═╝ ╚═════╝ ╚══════╝ ╚═╝ ', cls: 'ascii' },
+  { t: '', cls: '' },
+  { t: ' v5.3 Alpha · Groq ↔ OpenRouter · 10 prompts · Easy + Medium', cls: 'boot' },
+  { t: " Type 'help' to begin. Your agent is ready.", cls: 'done' }
+];
+
+async function bootStep() {
+  cacheDOMRefs(); // populate all cached DOM refs before anything else runs
+
+  // BUG 1 FIX: modal overlay listener must register after cacheDOMRefs().
+  DOM.modalOverlay.addEventListener('click', e => {
+    if (e.target === DOM.modalOverlay) closeModal();
+  });
+
+  // Warn early if env keys are missing
+  const missingKeys = checkKeysAvailable();
+  if (missingKeys.length > 0) {
+    const warn = document.createElement('div');
+    warn.className   = 'line error';
+    warn.textContent = `⚠️  Missing env keys: ${missingKeys.join(', ').toUpperCase()} — set window.ENV before loading.`;
+    DOM.bootArea.appendChild(warn);
+  }
+  for (const { t, cls } of BOOT_SEQ) {
+    if (t) {
+      const div       = document.createElement('div');
+      div.className   = `line ${cls}`;
+      div.textContent = t;
+      DOM.bootArea.appendChild(div);
+      scrollDown();
+    }
+    await new Promise(r => setTimeout(r, 160));
+  }
+  await new Promise(r => setTimeout(r, 400));
+  DOM.bootArea.style.display  = 'none';
+  DOM.osArea.style.display    = 'block';
+  DOM.inputRow.style.display  = 'flex';
+  loadSession();
+  focusInput();
+  updateStatus();
+  if (!localStorage.getItem(INTRO_KEY)) setTimeout(openModal, 500);
+}
+
+bootStep();
+  </script>
+</body>
+</html>
