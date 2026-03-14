@@ -27,10 +27,6 @@ function loadEnv() {
     });
   }
   
-  // process.env takes precedence over .env file
-  if (process.env.GROQ_API_KEY) envVars.GROQ_API_KEY = process.env.GROQ_API_KEY;
-  if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-  
   return envVars;
 }
 
